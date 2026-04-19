@@ -142,37 +142,35 @@ def wp(stmt: Stmt, Q: BoolRef) -> BoolRef:
     """
     Compute the weakest precondition of `stmt` w.r.t. postcondition `Q`.
     For while loops, append side VCs to the global `side_vcs` list.
-
-    TODO: Implement all six cases.
     """
     global side_vcs
 
     match stmt:
         case Assign(var, expr):
-            # TODO: Q[var ↦ expr]
-            pass
+            return(z3_substitute_var(Q, var, aexp_to_z3(expr)))
 
         case Seq(s1, s2):
-            # TODO
-            pass
+            return(wp(s1, wp(s2, Q)))
 
         case If(cond, s1, s2):
-            # TODO
-            pass
+            z3cond = bexp_to_z3(cond)
+            return(And(Implies(z3cond, wp(s1, Q)), Implies(Not(z3cond), wp(s2, Q))))
 
         case While(cond, inv, body):
-            # TODO: Return I. Generate two side VCs:
+            #   Return I. Generate two side VCs:
             #   preservation: I ∧ b → wp(body, I)
             #   postcondition: I ∧ ¬b → Q
-            pass
+            I = bexp_to_z3(inv)
+            b = bexp_to_z3(cond)
+            side_vcs.append(("Preservation", Implies(And(I, b), wp(body, I))))
+            side_vcs.append(("Exit", Implies(And(I, Not(b)), Q)))
+            return(I)
 
         case Assert(cond):
-            # TODO
-            pass
+            return And(bexp_to_z3(cond), Q)
 
         case Assume(cond):
-            # TODO
-            pass
+            return Implies(bexp_to_z3(cond), Q)
 
         case _:
             raise ValueError(f"Unknown statement: {stmt}")
@@ -183,8 +181,6 @@ def verify(pre: BExp, stmt: Stmt, post: BExp, label: str = "Program"):
     Verify the Hoare triple {pre} stmt {post}.
     1. Clear side_vcs.  2. Compute wp.  3. Check pre → wp is valid.
     4. Check each side VC.  5. Print results.
-
-    TODO: Implement this function.
     """
     global side_vcs
     side_vcs = []
@@ -192,9 +188,31 @@ def verify(pre: BExp, stmt: Stmt, post: BExp, label: str = "Program"):
     pre_z3 = bexp_to_z3(pre)
     post_z3 = bexp_to_z3(post)
 
-    # TODO
     print(f"=== {label} ===")
-    print("  TODO: implement verify()")
+
+    weakest = wp(stmt, post_z3)
+
+    # Verify pre -> wp(stmt, post)
+    s = Solver()
+    s.add(Not(Implies(pre_z3, weakest)))
+
+    if s.check() == unsat:
+        print("Main verification condition: VALID")
+    else:
+        print("Main verification condition: FAILED")
+        print("Counterexample:", s.model())
+
+    # Check loop side conditions
+    for name, vc in side_vcs:
+        s = Solver()
+        s.add(Not(vc))
+
+        if s.check() == unsat:
+            print(f"{name}: VALID")
+        else:
+            print(f"{name}: FAILED")
+            print("Counterexample:", s.model())
+
     print()
 
 
@@ -240,11 +258,13 @@ def test_mult():
       while i < a  invariant ???  do
         r := r + b;  i := i + 1;
       { r == a * b }
-
-    TODO: Replace the invariant below with a correct one.
     """
     pre = Compare('>=', Var('a'), IntConst(0))
-    inv = BoolConst(True)  # ← WRONG — replace with correct invariant
+
+    invCtr = Compare("<=", Var("i"), Var("a"))
+    invMul = Compare("==", Var("r"), BinOp("*", Var("b"), Var("i")))
+    inv = ImpAnd(invCtr, invMul)
+
     body = Seq(Assign('r', BinOp('+', Var('r'), Var('b'))),
                Assign('i', BinOp('+', Var('i'), IntConst(1))))
     stmt = Seq(Assign('i', IntConst(0)),
@@ -262,12 +282,14 @@ def test_add():
       while i < m  invariant ???  do
         r := r + 1;  i := i + 1;
       { r == n + m }
-
-    TODO: Replace the invariant below with a correct one.
     """
     pre = ImpAnd(Compare('>=', Var('n'), IntConst(0)),
                  Compare('>=', Var('m'), IntConst(0)))
-    inv = BoolConst(True)  # ← WRONG — replace with correct invariant
+    
+    invCtr = Compare("<=", Var("i"), Var("m"))
+    invMul = Compare("==", Var("r"), BinOp("+", Var("n"), Var("i")))
+    inv = ImpAnd(invCtr, invMul)
+
     body = Seq(Assign('r', BinOp('+', Var('r'), IntConst(1))),
                Assign('i', BinOp('+', Var('i'), IntConst(1))))
     stmt = Seq(Assign('i', IntConst(0)),
@@ -285,11 +307,14 @@ def test_sum():
       while i <= n  invariant ???  do
         s := s + i;  i := i + 1;
       { 2 * s == n * (n + 1) }
-
-    TODO: Replace the invariant below with a correct one.
     """
     pre = Compare('>=', Var('n'), IntConst(1))
-    inv = BoolConst(True)  # ← WRONG — replace with correct invariant
+
+    invCtr = Compare("<=", Var("i"), BinOp("+", Var("n"), IntConst(1)))
+    iiMin1 = BinOp("*", Var("i"), BinOp("-", Var("i"), IntConst(1)))
+    invArith = Compare("==", BinOp("*", Var("s"), IntConst(2)), iiMin1)
+    inv = ImpAnd(invCtr, invArith)
+
     body = Seq(Assign('s', BinOp('+', Var('s'), Var('i'))),
                Assign('i', BinOp('+', Var('i'), IntConst(1))))
     stmt = Seq(Assign('i', IntConst(1)),
@@ -345,11 +370,15 @@ def test_buggy_div():
     verify(pre, stmt, post, "Buggy Division (should FAIL)")
 
     # TODO: Uncomment and fix the invariant below, then re-verify.
-    # inv_fixed = ImpAnd(
-    #     Compare('==', BinOp('+', BinOp('*', Var('q'), Var('y')), Var('r')), Var('x')),
-    #     ???  # ← Add the missing conjunct
-    # )
-    # ... rebuild stmt with inv_fixed and call verify(...)
+    inv_fixed = ImpAnd(
+        Compare('==', BinOp('+', BinOp('*', Var('q'), Var('y')), Var('r')), Var('x')),
+        Compare(">=", Var("r"), IntConst(0))
+    )
+    stmtFixed = Seq(Assign('q', IntConst(0)),
+               Seq(Assign('r', Var('x')),
+                   While(Compare('>=', Var('r'), Var('y')),
+                         inv_fixed, body)))
+    verify(pre, stmtFixed, post, "Corrected Division")
 
 
 # ============================================================================
@@ -371,33 +400,39 @@ def test_buggy_div():
 def test_wp_derivation():
     """
     Part (a): Use your VCG to compute wp, then check candidate preconditions.
-    TODO: Implement after you finish Part (b).
     """
     print("=== Part (a): WP Derivation ===")
 
-    # TODO: Build the IMP AST for the program above
-    # stmt = Seq(Assign('x', ...), If(...))
-    # post = Compare('>', Var('y'), IntConst(0))
+    trueBranch = Assign("y", BinOp("*", Var("x"), IntConst(2)))
+    falseBranch = Assign("y", BinOp("-", IntConst(0), Var("x")))
+    impIf = If(Compare(">", Var("x"), IntConst(0)), trueBranch, falseBranch)
+    stmt = Seq(Assign("x", BinOp("+", Var("x"), IntConst(1))), impIf)
+    post = Compare(">", Var("y"), IntConst(0))
 
-    # TODO: Compute wp(stmt, post_z3) and print it
-    # wp_result = wp(stmt, bexp_to_z3(post))
-    # print(f"  wp = {wp_result}")
+    wp_result = wp(stmt, bexp_to_z3(post))
+    print(f"wp = {wp_result}")
 
-    # TODO: For each candidate precondition, check if pre → wp is valid
-    # candidates = [
-    #     ("x >= 0",  z3_var('x') >= 0),
-    #     ("x >= -1", z3_var('x') >= -1),
-    #     ("x == -1", z3_var('x') == -1),
-    # ]
-    # for name, pre in candidates:
-    #     s = Solver()
-    #     s.add(Not(Implies(pre, wp_result)))
-    #     result = s.check()
-    #     valid = (result == unsat)
-    #     print(f"  {name}: {'VALID' if valid else 'INVALID'}")
-    #     # [EXPLAIN] in a comment: why is this precondition valid or invalid?
+    candidates = [
+        ("x >= 0",  z3_var('x') >= 0),
+        ("x >= -1", z3_var('x') >= -1),
+        ("x == -1", z3_var('x') == -1),
+    ]
+    for name, pre in candidates:
+        s = Solver()
+        s.add(Not(Implies(pre, wp_result)))
+        result = s.check()
+        valid = (result == unsat)
+        print(f"  {name}: {'VALID' if valid else 'INVALID'}")
+        # [EXPLAIN] in a comment: why is this precondition valid or invalid?
+        # For the first candidate, this is valid, because when the if statement executes,
+        # the TRUE branch will be taken and y=2*x. Since x is at least 1 at this point,
+        # y will be > 0.
 
-    print("  TODO: implement after Part (b)")
+        # For the second candidate, if x == -1, then x will be set to 0, and y will be set to
+        # 0-0=0. Thus, y is not > 0.
+
+        # For the third candidate, it is not valid for exactly the same case as the previous.
+
     print()
 
 

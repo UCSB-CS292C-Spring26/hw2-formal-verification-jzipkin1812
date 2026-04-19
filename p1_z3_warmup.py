@@ -116,6 +116,9 @@ def part_c():
 #
 # [EXPLAIN] in a comment below: Why are these two axioms together sufficient
 # to fully characterize Store/Select behavior? (2–3 sentences)
+# The two statements fully explain what happens when we write into an array and then read from it.
+# If we write and read the same index, our result will clearly be the value that we just wrote, as we simply stored a value into memory and then read it back.
+# If we write and read different indices, the write has no bearing on the read, and we instead get the result of whatever was stored in the array at the read index before.
 # ---------------------------------------------------------------------------
 def part_d():
     a = Array('a', IntSort(), IntSort())

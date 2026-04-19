@@ -15,8 +15,7 @@ def part_a():
     x, y, z = Ints('x y z')
     s = Solver()
 
-    # TODO: Add constraints
-    # s.add(...)
+    s.add(x + 2 * y == z, z > 10, x > 0, y > 0)
 
     print("=== Part (a) ===")
     if s.check() == sat:
@@ -36,8 +35,7 @@ def part_b():
     x = Int('x')
     s = Solver()
 
-    # TODO: Add the *negation* of the formula and check UNSAT
-    # s.add(...)
+    s.add(x > 5, x <= 3)
 
     print("=== Part (b) ===")
     result = s.check()
@@ -61,14 +59,15 @@ def part_b():
 #   Each check should print what it's testing and whether it holds.
 #   Hint: Apply f to both sides of the first equation.
 # ---------------------------------------------------------------------------
+from z3 import *
+
 def part_c():
     S = DeclareSort('S')
     x = Const('x', S)
     f = Function('f', S, S)
     s = Solver()
 
-    # TODO: Add the three constraints
-    # s.add(...)
+    s.add(f(f(x)) == x, f(f(f(x))) == x, f(x) != x)
 
     print("=== Part (c) ===")
     result = s.check()
@@ -76,9 +75,37 @@ def part_c():
         print(f"SAT: {s.model()}")
     else:
         print("UNSAT")
-    # TODO: Add Z3 derivation steps below (see STEP 2 above).
-    print()
 
+    def checkValid(name, premises, conclusion):
+        t = Solver()
+        t.add(premises)
+        t.add(Not(conclusion))
+        holds = (t.check() == unsat)
+        print(f"{name}: {'VALID' if holds else 'NOT VALID'}")
+
+    print("Derivation steps:")
+
+    # Check 1: Apply f to both sides of f(f(x)) = x
+    checkValid(
+        "1. From f(f(x)) = x, derive f(f(f(x))) = f(x)",
+        [f(f(x)) == x],
+        f(f(f(x))) == f(x)
+    )
+
+    # Check 2: Combine with given f(f(f(x))) = x
+    checkValid(
+        "2. From f(f(f(x))) = x and f(f(f(x))) = f(x), derive f(x) = x",
+        [f(f(f(x))) == x, f(f(f(x))) == f(x)],
+        f(x) == x
+    )
+
+    # Check 3: Show contradiction with f(x) != x
+    checkValid(
+        "3. From f(x) = x, derive contradiction",
+        [f(x) == x, f(x) != x],
+        False
+    )
+    print()
 
 # ---------------------------------------------------------------------------
 # Part (d) — 4 pts: Array Axioms
@@ -98,15 +125,15 @@ def part_d():
 
     # Axiom 1: Read-over-write HIT
     s1 = Solver()
-    # TODO: Negate axiom 1 and check UNSAT
-    # s1.add(...)
+    s1.add(i == j)
+    s1.add(Select(Store(a, i, v), j) != v)
     r1 = s1.check()
     print(f"Axiom 1 (hit):  {'Valid' if r1 == unsat else 'INVALID'}")
 
     # Axiom 2: Read-over-write MISS
     s2 = Solver()
-    # TODO: Negate axiom 2 and check UNSAT
-    # s2.add(...)
+    s2.add(i != j)
+    s2.add(Select(Store(a, i, v), j) != Select(a, j))
     r2 = s2.check()
     print(f"Axiom 2 (miss): {'Valid' if r2 == unsat else 'INVALID'}")
     print()

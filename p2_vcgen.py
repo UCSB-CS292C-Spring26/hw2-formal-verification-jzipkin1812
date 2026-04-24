@@ -261,6 +261,11 @@ def test_mult():
     """
     pre = Compare('>=', Var('a'), IntConst(0))
 
+    # At each stage of the loop, we add b,
+    # so r should always be equal to b * i.
+    # The "invCtr" makes sure that, after the loop, i will be equal to a,
+    # so you end up with a * b.
+    # I found the invariant on my own without LLM assistance.
     invCtr = Compare("<=", Var("i"), Var("a"))
     invMul = Compare("==", Var("r"), BinOp("*", Var("b"), Var("i")))
     inv = ImpAnd(invCtr, invMul)
@@ -286,6 +291,10 @@ def test_add():
     pre = ImpAnd(Compare('>=', Var('n'), IntConst(0)),
                  Compare('>=', Var('m'), IntConst(0)))
     
+    # At each stage of the loop, we add 1 to n, so r is always n + i.
+    # The "invCtr" portion ensures that, at the end of the loop, i == m,
+    # so we know we get n + m and the postcondition holds.
+    # I found the invariant on my own without LLM assistance.
     invCtr = Compare("<=", Var("i"), Var("m"))
     invMul = Compare("==", Var("r"), BinOp("+", Var("n"), Var("i")))
     inv = ImpAnd(invCtr, invMul)
@@ -310,6 +319,9 @@ def test_sum():
     """
     pre = Compare('>=', Var('n'), IntConst(1))
 
+    # This invariant is exactly the same as an example we studied in lecture.
+    # At each loop stage we get the sum of the first i natural numbers, i.e. (i)(i-1)/2.
+    # At the end of the loop, i is n + 1, so we get (n)(n+1)/2.
     invCtr = Compare("<=", Var("i"), BinOp("+", Var("n"), IntConst(1)))
     iiMin1 = BinOp("*", Var("i"), BinOp("-", Var("i"), IntConst(1)))
     invArith = Compare("==", BinOp("*", Var("s"), IntConst(2)), iiMin1)
@@ -332,6 +344,9 @@ def test_sum():
 # 1. Run it — which side VC fails?
 # 2. [EXPLAIN] Give a concrete state where the invariant holds but the
 #    postcondition does not.
+# z3 gives a counterexample to answer this question: Counterexample: [x = -6, y = -4, r = -6, q = 0]
+# The condition "0 <= r" of the postcondition does not hold,
+# but the buggy invariant "qy+r==x" does hold.
 # 3. Fix the invariant and re-verify.
 # ============================================================================
 
@@ -369,7 +384,6 @@ def test_buggy_div():
 
     verify(pre, stmt, post, "Buggy Division (should FAIL)")
 
-    # TODO: Uncomment and fix the invariant below, then re-verify.
     inv_fixed = ImpAnd(
         Compare('==', BinOp('+', BinOp('*', Var('q'), Var('y')), Var('r')), Var('x')),
         Compare(">=", Var("r"), IntConst(0))
